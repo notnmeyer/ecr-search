@@ -9,4 +9,4 @@ tasks:
   build:
     desc: Build the binary
     cmds:
-      - goreleaser build --rm-dist --single-target
+      - goreleaser build --rm-dist --single-target --snapshot
