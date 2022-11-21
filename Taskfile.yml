@@ -1,0 +1,12 @@
+version: '3'
+
+tasks:
+  deps:
+    desc: Install deps
+    cmds:
+      - go mod tidy
+
+  build:
+    desc: Build the binary
+    cmds:
+      - goreleaser build --rm-dist --single-target
