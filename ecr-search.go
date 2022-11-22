@@ -12,8 +12,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
-	ecrTypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
+	"github.com/aws/aws-sdk-go-v2/service/ecr/types"
 )
+
+type ECRAPI interface {
+	DescribeImages(ctx context.Context, params *ecr.DescribeImagesInput, optFns ...func(*ecr.Options)) (*ecr.DescribeImagesOutput, error)
+	ListImages(ctx context.Context, params *ecr.ListImagesInput, optFns ...func(*ecr.Options)) (*ecr.ListImagesOutput, error)
+}
 
 const (
 	maxResults    int32  = 1000 // for ListImages, maximum value
@@ -22,7 +27,7 @@ const (
 )
 
 var (
-	client *ecr.Client   // aws client
+	client ECRAPI        // ecr client
 	image  string        // the docker image to search
 	images []imageDetail // our results
 	regex  string        // the regex to match tags against
@@ -45,7 +50,7 @@ func init() {
 	}
 
 	client = ecr.NewFromConfig(cfg, func(o *ecr.Options) {
-		o.Region = "us-west-2"
+		o.Region = region
 	})
 }
 
@@ -55,7 +60,7 @@ func sortTags() {
 	})
 }
 
-func buildImageDetails(i []ecrTypes.ImageIdentifier) {
+func buildImageDetails(i []types.ImageIdentifier) {
 	input := ecr.DescribeImagesInput{
 		ImageIds:       i,
 		RepositoryName: &image,
@@ -89,27 +94,28 @@ func output() {
 }
 
 func getAllTags() *ecr.ListImagesOutput {
-	filter := &ecrTypes.ListImagesFilter{
-		TagStatus: ecrTypes.TagStatusTagged,
-	}
+	// filter := &types.ListImagesFilter{
+	// 	TagStatus: types.TagStatusAny,
+	// }
 
 	maxResults := maxResults
 	input := &ecr.ListImagesInput{
 		RepositoryName: aws.String(image),
-		MaxResults:     &maxResults,
-		Filter:         filter,
+		// Filter:         filter,
+		MaxResults: &maxResults,
+		RegistryId: aws.String("823714365827"),
 	}
 
 	result, err := client.ListImages(context.TODO(), input)
 	if err != nil {
-		fmt.Println(err)
+		panic(err)
 	}
 
 	return result
 }
 
-func getImageTags() []ecrTypes.ImageIdentifier {
-	var i []ecrTypes.ImageIdentifier
+func getImageTags() []types.ImageIdentifier {
+	var i []types.ImageIdentifier
 
 	for _, tag := range getAllTags().ImageIds {
 		matched, _ := regexp.MatchString(regex, *tag.ImageTag)
