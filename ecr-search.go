@@ -20,33 +20,37 @@ type ECRAPI interface {
 	ListImages(ctx context.Context, params *ecr.ListImagesInput, optFns ...func(*ecr.Options)) (*ecr.ListImagesOutput, error)
 }
 
-var (
-	client ECRAPI        // ecr client
-	image  string        // the docker image to search
-	images []imageDetail // our results
-	regex  string        // the regex to match tags against
-	region string        // the aws region to use
-)
-
 type imageDetail struct {
 	name, date string
 }
 
-func sortTags() {
-	sort.Slice(images, func(i, j int) bool {
-		return images[i].date > images[j].date
+type ecrSearch struct {
+	client ECRAPI
+	image  string        // the docker image to search
+	images []imageDetail // our results
+	regex  string        // the regex to match tags against
+	region string        // the aws region to use
+}
+
+func NewEcrSearch() *ecrSearch {
+	return &ecrSearch{}
+}
+
+func (search *ecrSearch) sortTags() {
+	sort.Slice(search.images, func(i, j int) bool {
+		return search.images[i].date > search.images[j].date
 	})
 }
 
-func buildImageDetails(i []types.ImageIdentifier) {
+func (search *ecrSearch) buildImageDetails(i []types.ImageIdentifier) {
 	input := ecr.DescribeImagesInput{
 		ImageIds:       i,
-		RepositoryName: &image,
+		RepositoryName: &search.image,
 	}
 
 	// TODO: add paging @ 100 per request to match DescribeImages
 	// maximum ImageIds
-	result, err := client.DescribeImages(context.TODO(), &input)
+	result, err := search.client.DescribeImages(context.TODO(), &input)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -58,62 +62,60 @@ func buildImageDetails(i []types.ImageIdentifier) {
 				date: image.ImagePushedAt.String(),
 			}
 
-			images = append(images, id)
+			search.images = append(search.images, id)
 		}
 	}
 }
 
-func output() {
+func (search *ecrSearch) print() {
+	search.sortTags()
 	var (
 		minwidth, tabwidth, padding int  = 0, 0, 1
 		padchar                     byte = ' '
 		flags                       uint = 0
 	)
 	w := tabwriter.NewWriter(os.Stdout, minwidth, tabwidth, padding, padchar, flags)
-	for _, tag := range images {
-		fmt.Fprintf(w, "%v:%v\t\t%v\n", image, tag.name, tag.date)
+	for _, tag := range search.images {
+		fmt.Fprintf(w, "%v:%v\t\t%v\n", search.image, tag.name, tag.date)
 	}
 	w.Flush()
 }
 
-func getAllTags() *ecr.ListImagesOutput {
-	// filter := &types.ListImagesFilter{
-	// 	TagStatus: types.TagStatusAny,
-	// }
+func (search *ecrSearch) getAllTags() (result *ecr.ListImagesOutput) {
+	var (
+		filter     = &types.ListImagesFilter{TagStatus: types.TagStatusTagged}
+		maxResults = int32(1000)
+	)
 
-	maxResults := maxResults
 	input := &ecr.ListImagesInput{
-		RepositoryName: aws.String(image),
-		// Filter:         filter,
-		MaxResults: &maxResults,
-		RegistryId: aws.String("823714365827"),
+		RepositoryName: aws.String(search.image),
+		Filter:         filter,
+		MaxResults:     &maxResults,
 	}
 
-	result, err := client.ListImages(context.TODO(), input)
+	result, err := search.client.ListImages(context.TODO(), input)
 	if err != nil {
 		panic(err)
 	}
-
-	return result
+	return
 }
 
-func getImageTags() []types.ImageIdentifier {
-	var i []types.ImageIdentifier
-
-	for _, tag := range getAllTags().ImageIds {
-		matched, _ := regexp.MatchString(regex, *tag.ImageTag)
+func (search *ecrSearch) getImageTags() (i []types.ImageIdentifier) {
+	for _, tag := range search.getAllTags().ImageIds {
+		matched, _ := regexp.MatchString(search.regex, *tag.ImageTag)
 		if matched {
 			i = append(i, tag)
 		}
 	}
-
-	return i
+	return
 }
 
 func main() {
-	flag.StringVar(&regex, "regex", "^latest", "Regex used to filter tags")
-	flag.StringVar(&image, "image", "", "The image name to search for")
-	flag.StringVar(&region, "region", "us-east-1", "The AWS region to use")
+	search := NewEcrSearch()
+
+	flag.StringVar(&search.regex, "regex", "^latest", "Regex used to filter tags")
+	flag.StringVar(&search.image, "image", "", "The image name to search for")
+	flag.StringVar(&search.region, "region", "us-east-1", "The AWS region to use")
 	flag.Parse()
 
 	cfg, err := config.LoadDefaultConfig(context.TODO())
@@ -121,12 +123,11 @@ func main() {
 		panic(err)
 	}
 
-	client = ecr.NewFromConfig(cfg, func(o *ecr.Options) {
-		o.Region = region
+	search.client = ecr.NewFromConfig(cfg, func(o *ecr.Options) {
+		o.Region = search.region
 	})
 
-	tagList := getImageTags()
-	buildImageDetails(tagList)
-	sortTags()
-	output()
+	tagList := search.getImageTags()
+	search.buildImageDetails(tagList)
+	search.print()
 }
