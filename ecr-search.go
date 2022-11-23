@@ -20,12 +20,6 @@ type ECRAPI interface {
 	ListImages(ctx context.Context, params *ecr.ListImagesInput, optFns ...func(*ecr.Options)) (*ecr.ListImagesOutput, error)
 }
 
-const (
-	maxResults    int32  = 1000 // for ListImages, maximum value
-	regexDefault  string = "^latest"
-	regionDefault string = "us-east-1"
-)
-
 var (
 	client ECRAPI        // ecr client
 	image  string        // the docker image to search
@@ -36,22 +30,6 @@ var (
 
 type imageDetail struct {
 	name, date string
-}
-
-func init() {
-	flag.StringVar(&regex, "regex", regexDefault, "Regex used to filter tags")
-	flag.StringVar(&image, "image", "", "The image name to search for")
-	flag.StringVar(&region, "region", regionDefault, "The AWS region to use")
-	flag.Parse()
-
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		panic(err)
-	}
-
-	client = ecr.NewFromConfig(cfg, func(o *ecr.Options) {
-		o.Region = region
-	})
 }
 
 func sortTags() {
@@ -86,7 +64,12 @@ func buildImageDetails(i []types.ImageIdentifier) {
 }
 
 func output() {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+	var (
+		minwidth, tabwidth, padding int  = 0, 0, 1
+		padchar                     byte = ' '
+		flags                       uint = 0
+	)
+	w := tabwriter.NewWriter(os.Stdout, minwidth, tabwidth, padding, padchar, flags)
 	for _, tag := range images {
 		fmt.Fprintf(w, "%v:%v\t\t%v\n", image, tag.name, tag.date)
 	}
@@ -128,6 +111,20 @@ func getImageTags() []types.ImageIdentifier {
 }
 
 func main() {
+	flag.StringVar(&regex, "regex", "^latest", "Regex used to filter tags")
+	flag.StringVar(&image, "image", "", "The image name to search for")
+	flag.StringVar(&region, "region", "us-east-1", "The AWS region to use")
+	flag.Parse()
+
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+	if err != nil {
+		panic(err)
+	}
+
+	client = ecr.NewFromConfig(cfg, func(o *ecr.Options) {
+		o.Region = region
+	})
+
 	tagList := getImageTags()
 	buildImageDetails(tagList)
 	sortTags()
