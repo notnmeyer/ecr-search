@@ -1,5 +1,8 @@
 version: '3'
 
+env:
+  AWS_PROFILE: personal
+
 tasks:
   deps:
     desc: Install deps
@@ -10,3 +13,13 @@ tasks:
     desc: Build the binary
     cmds:
       - goreleaser build --rm-dist --single-target --snapshot
+
+  release:
+    desc: Build and release
+    cmds:
+      - goreleaser release --rm-dist --snapshot
+
+  run:
+    desc: Run app
+    cmds:
+      - go run ecr-search.go {{.CLI_ARGS}}
